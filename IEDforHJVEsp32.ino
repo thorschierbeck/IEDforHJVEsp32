@@ -10,7 +10,7 @@
 #include <ArduinoJson.h>
 #include <WiFiClient.h>
 #include <WebServer.h>
-
+#include <HTTPClient.h>
 
 
 #define TRIGGER_PIN 0
@@ -31,9 +31,6 @@ WebServer server(80);
 StaticJsonDocument<250> jsonDocument;
 char buffer[250];
 
-//float temperature = 25.5;
-//float humidity  = 35.1;
-//float pressure = 1013.25;
 
 int Id = 1;
 IPAddress IpAddress;// = "";
@@ -42,6 +39,7 @@ bool Armed = false;
 String Message = "Ok";
 
 bool soundenabled = true;
+bool runones = false;
 
 
 void setup() {
@@ -143,6 +141,108 @@ void setup() {
     
 }
 
+
+
+void loop() {
+    if (wm_nonblocking) wm.process(); // avoid delays() in loop when non-blocking and other long running code  
+    if (WiFi.status() == WL_CONNECTED) server.handleClient();
+    if (MotionDetected == true && digitalRead(DETECTOR_PIN) == LOW) 
+    {
+        runones = false;
+        MotionDetected = digitalRead(DETECTOR_PIN);
+        Message = "Detector Ready";
+    }
+
+
+    if (soundenabled && MotionDetected)
+        digitalWrite(SOUND_PIN, HIGH);
+    else
+        digitalWrite(SOUND_PIN, LOW);
+    if (Armed && MotionDetected)
+        digitalWrite(DETONATOR_PIN, HIGH);//Explode
+    else digitalWrite(DETONATOR_PIN, LOW);
+    checkButton();
+    if (!runones)PostToDataToServer();
+    
+    // put your main code here, to run repeatedly:
+}
+
+void InitSensor()
+{
+    Message = "Detector Warming up";
+    Serial.println(Message);
+ 
+    delay(1000);
+    while (digitalRead(DETECTOR_PIN) == HIGH)
+    {
+        delay(1000);
+        
+    }
+    MotionDetected = digitalRead(DETECTOR_PIN);
+    attachInterrupt(DETECTOR_PIN, MotionDetection, RISING);
+   
+    Message = "Detector ready";
+    Serial.println(Message);
+
+    digitalWrite(SOUND_PIN, HIGH);
+    delay(100);
+    digitalWrite(SOUND_PIN, LOW);
+    delay(100);
+    digitalWrite(SOUND_PIN, HIGH);
+    delay(100);
+    digitalWrite(SOUND_PIN, LOW);
+
+}
+
+void PostToDataToServer()
+{
+    Serial.println("Posting JSON data to server...");
+    // Block until we are able to connect to the WiFi access point
+    if (WiFi.status() == WL_CONNECTED) {
+
+        HTTPClient http;
+
+        http.begin("http://192.168.1.27/api/IED");
+        http.addHeader("Content-Type", "application/json");
+
+        StaticJsonDocument<200> doc;
+        // Add values in the document
+        //
+        doc["id"] = Id;
+        doc["ipAddress"] = IpAddress;
+        doc["motionDetected"] = MotionDetected;
+        doc["armed"] = Armed;
+        doc["message"] = Message;
+
+        // Add an array.
+        //
+       /* JsonArray data = doc.createNestedArray("data");
+        data.add(48.756080);
+        data.add(2.302038);*/
+
+        String requestBody;
+        serializeJson(doc, requestBody);
+
+        int httpResponseCode = http.POST(requestBody);
+
+        if (httpResponseCode > 0) {
+
+            String response = http.getString();
+
+            Serial.println(httpResponseCode);
+            Serial.println(response);
+
+        }
+        else {
+            
+            
+            Serial.printf("Error occurred while sending HTTP POST: %s\n", http.errorToString(httpResponseCode).c_str());
+
+        }
+        runones = true;
+    }
+}
+
 void checkButton() {
     // check for button press
     if (digitalRead(TRIGGER_PIN) == LOW) {
@@ -176,7 +276,6 @@ void checkButton() {
     }
 }
 
-
 String getParam(String name) {
     //read parameter from server, for customhmtl input
     String value;
@@ -191,51 +290,10 @@ void saveParamCallback() {
     Serial.println("PARAM customfieldid = " + getParam("customfieldid"));
 }
 
-void loop() {
-    if (wm_nonblocking) wm.process(); // avoid delays() in loop when non-blocking and other long running code  
-    if (WiFi.status() == WL_CONNECTED) server.handleClient();
-    MotionDetected = digitalRead(DETECTOR_PIN);
-    if (soundenabled && MotionDetected)
-        digitalWrite(SOUND_PIN, HIGH);
-    else
-        digitalWrite(SOUND_PIN, LOW);
-    if (Armed && MotionDetected)
-        digitalWrite(DETONATOR_PIN, HIGH);//Explode
-    else digitalWrite(DETONATOR_PIN, LOW);
-    checkButton();
-    
-    
-    // put your main code here, to run repeatedly:
-}
-
-void InitSensor()
-{
-   // digitalWrite(soundpin, LOW);
-    delay(1000);
-    while (digitalRead(DETECTOR_PIN) == HIGH)
-    {
-        delay(1000);
-        // Serial.println("initsensor");
-    }
-    MotionDetected = digitalRead(DETECTOR_PIN);
-    attachInterrupt(DETECTOR_PIN, MotionDetection, RISING);
-   // attachInterrupt(DETECTOR_PIN, NoMotionDetection, FALLING);
-    Message = "Detector ready";
-    Serial.println(Message);
-
-    digitalWrite(SOUND_PIN, HIGH);
-    delay(100);
-    digitalWrite(SOUND_PIN, LOW);
-    delay(100);
-    digitalWrite(SOUND_PIN, HIGH);
-    delay(100);
-    digitalWrite(SOUND_PIN, LOW);
-
-}
 // Interrupt section
 void MotionDetection()
 {
-    MotionDetected = digitalRead(DETECTOR_PIN);
+    MotionDetected = digitalRead(DETECTOR_PIN); //pin goes high
     Serial.println("Detected");
     if (soundenabled)
         digitalWrite(SOUND_PIN, HIGH);
@@ -245,17 +303,13 @@ void MotionDetection()
         digitalWrite(DETONATOR_PIN, HIGH);//Explode
     else 
         digitalWrite(DETONATOR_PIN, LOW);
-
+    runones = false;
+    Message = "Movement Detected";
 }
-//void NoMotionDetection()
-//{
-//    MotionDetected = digitalRead(DETECTOR_PIN);
-//    Serial.println("No Detected");
-//    
-//
-//}
 
-// Api Section
+
+
+//API section
 
 void setup_api()
 {
@@ -271,24 +325,6 @@ void setup_api()
 
 }
 
-
-void create_json(int id , IPAddress Ip, bool md, bool am,String ms) 
-{
-    jsonDocument.clear();
-    jsonDocument["Id"] = id;
-    jsonDocument["IpAddress"] = Ip;
-    jsonDocument["MotionDetected"] = md;
-    jsonDocument["Armed"] = am;
-    jsonDocument["Message"] = ms;
-    serializeJson(jsonDocument, buffer);
-}
-void add_json_object(char* tag, float value, char* unit) {
-    JsonObject obj = jsonDocument.createNestedObject();
-    obj["type"] = tag;
-    obj["value"] = value;
-    obj["unit"] = unit;
-}
-
 void getIEDStatus()
 {
     Serial.println("Get IEDStatus");
@@ -296,7 +332,6 @@ void getIEDStatus()
     server.send(200, "application/json", buffer);
     /*server.send(200, "application/json", "OK");*/
 }
-
 
 //void getEnv()
 //{
@@ -309,6 +344,9 @@ void getIEDStatus()
 //    server.send(200, "application/json", buffer);
 //   // server.send(200, "application/json", "OK");
 //}
+
+//API Post to the Esp32
+
 void handlePost() 
 {
     if (server.hasArg("plain") == false) {
@@ -325,6 +363,26 @@ void handlePost()
     //pixels.show();
     // Respond to the client
     create_json(Id, IpAddress, MotionDetected, Armed, Message);
-    server.send(200, "application/json", buffer);
-    
+    server.send(200, "application/json", "{}");
+    runones = false;
+}
+
+// Json handlers
+
+void create_json(int id, IPAddress Ip, bool md, bool am, String ms)
+{
+    jsonDocument.clear();
+    jsonDocument["Id"] = id;
+    jsonDocument["IpAddress"] = Ip;
+    jsonDocument["MotionDetected"] = md;
+    jsonDocument["Armed"] = am;
+    jsonDocument["Message"] = ms;
+    serializeJson(jsonDocument, buffer);
+}
+
+void add_json_object(char* tag, float value, char* unit) {
+    JsonObject obj = jsonDocument.createNestedObject();
+    obj["type"] = tag;
+    obj["value"] = value;
+    obj["unit"] = unit;
 }
