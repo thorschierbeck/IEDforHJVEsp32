@@ -18,6 +18,8 @@
 #define DETECTOR_PIN 12
 #define SOUND_PIN 14
 #define SOUND_ENABLE_PIN 27
+#define BATTERY_PIN 32
+#define TEST_PIN 25
 
  // wifimanager can run in a blocking mode or a non blocking mode
  // Be sure to know how to process loops with no delay() if using non blocking
@@ -31,12 +33,16 @@ WebServer server(80);
 StaticJsonDocument<250> jsonDocument;
 char buffer[250];
 
+long timeperiode = 0;
+long periode = 60000;
 
 int Id = 1;
 IPAddress IpAddress;// = "";
 bool MotionDetected = false;
 bool Armed = false;
 String Message = "Ok";
+double ProcentBat = 0;
+int RRSI = -100;
 
 bool soundenabled = true;
 bool runones = false;
@@ -49,7 +55,7 @@ void setup() {
     delay(3000);
     Serial.println("\n Starting");
 
-    pinMode(TRIGGER_PIN, INPUT);
+    pinMode(TRIGGER_PIN, INPUT_PULLUP);
     pinMode(DETONATOR_PIN, OUTPUT);
     pinMode(SOUND_PIN, OUTPUT);
     pinMode(DETECTOR_PIN, INPUT);
@@ -127,8 +133,9 @@ void setup() {
     else {
         //if you get here you have connected to the WiFi    
         Serial.println(wm.getWLStatusString());
+        RRSI = WiFi.RSSI();
         Serial.print("RRSI: ");
-        Serial.print(WiFi.RSSI());
+        Serial.print(RRSI);
         Serial.println(" dBm");
         IpAddress = WiFi.localIP();
         Serial.println(IpAddress);
@@ -158,17 +165,35 @@ void loop() {
         digitalWrite(SOUND_PIN, HIGH);
     else
         digitalWrite(SOUND_PIN, LOW);
+    
     if (Armed && MotionDetected)
         digitalWrite(DETONATOR_PIN, HIGH);//Explode
-    else digitalWrite(DETONATOR_PIN, LOW);
+    else 
+        digitalWrite(DETONATOR_PIN, LOW);
+    
     checkButton();
-    if (!runones)PostToDataToServer();
+   
+    if (!runones)
+    {
+        ReadBattery();
+        RRSI = WiFi.RSSI();
+        PostToDataToServer();
+    }
+
+    if (millis() >= timeperiode + periode)
+    {
+       
+        timeperiode = millis() + periode;
+        runones = false;
+
+    }
     
     // put your main code here, to run repeatedly:
 }
 
 void InitSensor()
 {
+    dacWrite(TEST_PIN, 200);
     Message = "Detector Warming up";
     Serial.println(Message);
  
@@ -179,7 +204,7 @@ void InitSensor()
         
     }
     MotionDetected = digitalRead(DETECTOR_PIN);
-    attachInterrupt(DETECTOR_PIN, MotionDetection, RISING);
+   
    
     Message = "Detector ready";
     Serial.println(Message);
@@ -191,11 +216,12 @@ void InitSensor()
     digitalWrite(SOUND_PIN, HIGH);
     delay(100);
     digitalWrite(SOUND_PIN, LOW);
-
+    attachInterrupt(DETECTOR_PIN, MotionDetection, RISING);
 }
 
 void PostToDataToServer()
 {
+  
     Serial.println("Posting JSON data to server...");
     // Block until we are able to connect to the WiFi access point
     if (WiFi.status() == WL_CONNECTED) {
@@ -213,6 +239,8 @@ void PostToDataToServer()
         doc["motionDetected"] = MotionDetected;
         doc["armed"] = Armed;
         doc["message"] = Message;
+        doc["batteryProcent"] = ProcentBat;
+        doc["rrsi"] = RRSI;
 
         // Add an array.
         //
@@ -288,6 +316,12 @@ String getParam(String name) {
 void saveParamCallback() {
     Serial.println("[CALLBACK] saveParamCallback fired");
     Serial.println("PARAM customfieldid = " + getParam("customfieldid"));
+}
+
+void ReadBattery()
+{
+   ProcentBat = map(analogRead(BATTERY_PIN), 2850, 3480, 0, 100);
+  
 }
 
 // Interrupt section
