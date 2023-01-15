@@ -193,7 +193,7 @@ void loop() {
 
 void InitSensor()
 {
-    dacWrite(TEST_PIN, 200);
+    dacWrite(TEST_PIN, 225);
     Message = "Detector Warming up";
     Serial.println(Message);
  
