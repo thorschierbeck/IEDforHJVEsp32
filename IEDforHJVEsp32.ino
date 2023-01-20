@@ -228,7 +228,7 @@ void PostToDataToServer()
 
         HTTPClient http;
 
-        http.begin("http://192.168.1.27/api/IED");
+        http.begin("http://ied.schier-lunds.dk/api/IED");
         http.addHeader("Content-Type", "application/json");
 
         StaticJsonDocument<200> doc;
