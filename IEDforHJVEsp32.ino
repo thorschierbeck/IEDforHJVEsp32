@@ -5,6 +5,8 @@
 
 //#include "Api.h"
 //#include "ApiController.h"
+#include <TinyGPS++.h>
+#include <TinyGPSPlus.h>
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
 #include <esp_wifi.h>
 #include <ArduinoJson.h>
@@ -20,7 +22,10 @@
 #define SOUND_ENABLE_PIN 27
 #define BATTERY_PIN 32
 #define TEST_PIN 25
+#define RXD2 16
+#define TXD2 17
 
+TinyGPSPlus gps;
  // wifimanager can run in a blocking mode or a non blocking mode
  // Be sure to know how to process loops with no delay() if using non blocking
 bool wm_nonblocking = false; // change to true to use non blocking
@@ -43,6 +48,10 @@ bool Armed = false;
 String Message = "Ok";
 double ProcentBat = 0;
 int RRSI = -100;
+double Longitude = 0;
+double Latitude = 0;
+double Altitude = 0;
+
 
 bool soundenabled = true;
 bool runones = false;
@@ -63,6 +72,7 @@ void setup() {
     digitalWrite(DETONATOR_PIN, LOW);
     soundenabled = digitalRead(SOUND_ENABLE_PIN);
     digitalWrite(SOUND_PIN, soundenabled);
+    Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2);
     
     String test = wm.getWiFiSSID();
     if (test == "")
@@ -182,11 +192,21 @@ void loop() {
 
     if (millis() >= timeperiode + periode)
     {
-       
+        while (Serial2.available() > 0)
+        {
+            if (gps.encode(Serial2.read()))
+            {
+                displayInfo();
+            }
+        }
         timeperiode = millis() + periode;
         runones = false;
 
     }
+
+   /* while (Serial2.available() > 0)
+        if (gps.encode(Serial2.read()))
+            displayInfo();*/
     
     // put your main code here, to run repeatedly:
 }
@@ -228,6 +248,7 @@ void PostToDataToServer()
 
         HTTPClient http;
 
+       // http.begin("http://ied.schier-lunds.dk/api/IED");
         http.begin("http://192.168.1.27/api/IED");
         http.addHeader("Content-Type", "application/json");
 
@@ -241,6 +262,9 @@ void PostToDataToServer()
         doc["message"] = Message;
         doc["batteryProcent"] = ProcentBat;
         doc["rrsi"] = RRSI;
+        doc["latitude"] = Latitude;
+        doc["longitude"] = Longitude;
+        doc["altitude"] = Altitude;
 
         // Add an array.
         //
@@ -391,7 +415,7 @@ void handlePost()
 
     //// Get RGB components
     Armed = jsonDocument["Armed"];
-    Serial.print(Armed);
+    Serial.println("Armeret has changed");
 
     //pixels.fill(pixels.Color(red, green, blue));
     //pixels.show();
@@ -419,4 +443,67 @@ void add_json_object(char* tag, float value, char* unit) {
     obj["type"] = tag;
     obj["value"] = value;
     obj["unit"] = unit;
+}
+
+void displayInfo()
+{
+    if (gps.location.isValid())
+    {
+
+        Latitude = gps.location.lat();
+        Longitude = gps.location.lng();
+        Altitude = gps.altitude.meters();
+        Serial.print("Latitude: ");
+        Serial.println(gps.location.lat(), 6);
+        Serial.print("Longitude:gps ");
+        Serial.println(gps.location.lng(), 6);
+        Serial.print("Altitude: ");
+        Serial.println(gps.altitude.meters());
+    }
+    else
+    {
+        Longitude = 0;
+        Latitude = 0;
+        Altitude = 0;
+
+        Serial.println("Location: Not Available");
+    }
+
+   /* Serial.print("Date: ");
+    if (gps.date.isValid())
+    {
+        Serial.print(gps.date.month());
+        Serial.print("/");
+        Serial.print(gps.date.day());
+        Serial.print("/");
+        Serial.println(gps.date.year());
+    }
+    else
+    {
+        Serial.println("Not Available");
+    }
+
+    Serial.print("Time: ");
+    if (gps.time.isValid())
+    {
+        if (gps.time.hour() < 10) Serial.print(F("0"));
+        Serial.print(gps.time.hour());
+        Serial.print(":");
+        if (gps.time.minute() < 10) Serial.print(F("0"));
+        Serial.print(gps.time.minute());
+        Serial.print(":");
+        if (gps.time.second() < 10) Serial.print(F("0"));
+        Serial.print(gps.time.second());
+        Serial.print(".");
+        if (gps.time.centisecond() < 10) Serial.print(F("0"));
+        Serial.println(gps.time.centisecond());
+    }
+    else
+    {
+        Serial.println("Not Available");
+    }
+*/
+   /* Serial.println();
+    Serial.println();
+    delay(1000);*/
 }
