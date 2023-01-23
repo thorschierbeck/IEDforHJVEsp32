@@ -139,7 +139,7 @@ void setup() {
 
     if (!res) {
         Serial.println("Failed to connect or hit timeout");
-        wm.resetSettings(); // wipe settings
+       // wm.resetSettings(); // wipe settings
         ESP.restart();
     }
     else {
