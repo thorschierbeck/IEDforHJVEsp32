@@ -5,6 +5,8 @@
 
 //#include "Api.h"
 //#include "ApiController.h"
+#include <TinyGPS++.h>
+#include <TinyGPSPlus.h>
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
 #include <esp_wifi.h>
 #include <ArduinoJson.h>
@@ -17,10 +19,13 @@
 #define DETONATOR_PIN 19
 #define DETECTOR_PIN 12
 #define SOUND_PIN 14
-#define SOUND_ENABLE_PIN 27
+//#define SOUND_ENABLE_PIN 27
 #define BATTERY_PIN 32
 #define TEST_PIN 25
+#define RXD2 16
+#define TXD2 17
 
+TinyGPSPlus gps;
  // wifimanager can run in a blocking mode or a non blocking mode
  // Be sure to know how to process loops with no delay() if using non blocking
 bool wm_nonblocking = false; // change to true to use non blocking
@@ -34,7 +39,7 @@ StaticJsonDocument<250> jsonDocument;
 char buffer[250];
 
 long timeperiode = 0;
-long periode = 60000;
+long periode = 30000;
 
 int Id = 1;
 IPAddress IpAddress;// = "";
@@ -43,8 +48,14 @@ bool Armed = false;
 String Message = "Ok";
 double ProcentBat = 0;
 int RRSI = -100;
+double Longitude = 0;
+double Latitude = 0;
+double Altitude = 0;
+int Satellites = 0;
+bool SoundEnabled = false;
 
-bool soundenabled = true;
+
+//bool soundenabled = true;
 bool runones = false;
 
 
@@ -59,10 +70,11 @@ void setup() {
     pinMode(DETONATOR_PIN, OUTPUT);
     pinMode(SOUND_PIN, OUTPUT);
     pinMode(DETECTOR_PIN, INPUT);
-    pinMode(SOUND_ENABLE_PIN, INPUT_PULLUP);
+   // pinMode(SOUND_ENABLE_PIN, INPUT_PULLUP);
     digitalWrite(DETONATOR_PIN, LOW);
-    soundenabled = digitalRead(SOUND_ENABLE_PIN);
-    digitalWrite(SOUND_PIN, soundenabled);
+   
+    digitalWrite(SOUND_PIN, SoundEnabled);
+    
     
     String test = wm.getWiFiSSID();
     if (test == "")
@@ -144,7 +156,7 @@ void setup() {
              
     }
     InitSensor();
-    
+    Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2);
     
 }
 
@@ -161,7 +173,7 @@ void loop() {
     }
 
 
-    if (soundenabled && MotionDetected)
+    if (SoundEnabled && MotionDetected)
         digitalWrite(SOUND_PIN, HIGH);
     else
         digitalWrite(SOUND_PIN, LOW);
@@ -182,11 +194,21 @@ void loop() {
 
     if (millis() >= timeperiode + periode)
     {
-       
+        
         timeperiode = millis() + periode;
         runones = false;
 
     }
+    while (Serial2.available() > 0)
+    {
+        if (gps.encode(Serial2.read()))
+        {
+            displayInfo();
+        }
+    }
+   /* while (Serial2.available() > 0)
+        if (gps.encode(Serial2.read()))
+            displayInfo();*/
     
     // put your main code here, to run repeatedly:
 }
@@ -229,6 +251,7 @@ void PostToDataToServer()
         HTTPClient http;
 
         http.begin("http://ied.schier-lunds.dk/api/IED");
+      //  http.begin("http://192.168.1.27/api/IED");
         http.addHeader("Content-Type", "application/json");
 
         StaticJsonDocument<200> doc;
@@ -238,9 +261,15 @@ void PostToDataToServer()
         doc["ipAddress"] = IpAddress;
         doc["motionDetected"] = MotionDetected;
         doc["armed"] = Armed;
+        doc["soundEnabled"] = SoundEnabled;
         doc["message"] = Message;
         doc["batteryProcent"] = ProcentBat;
         doc["rrsi"] = RRSI;
+        doc["latitude"] = Latitude;
+        doc["longitude"] = Longitude;
+        doc["altitude"] = Altitude;
+        doc["satellites"] = Satellites;
+
 
         // Add an array.
         //
@@ -329,7 +358,7 @@ void MotionDetection()
 {
     MotionDetected = digitalRead(DETECTOR_PIN); //pin goes high
     Serial.println("Detected");
-    if (soundenabled)
+    if (SoundEnabled)
         digitalWrite(SOUND_PIN, HIGH);
     else
         digitalWrite(SOUND_PIN, LOW);
@@ -362,7 +391,7 @@ void setup_api()
 void getIEDStatus()
 {
     Serial.println("Get IEDStatus");
-    create_json(Id,IpAddress,MotionDetected,Armed,Message);
+    create_json(Id,IpAddress,MotionDetected,Armed,Message, SoundEnabled);
     server.send(200, "application/json", buffer);
     /*server.send(200, "application/json", "OK");*/
 }
@@ -391,19 +420,20 @@ void handlePost()
 
     //// Get RGB components
     Armed = jsonDocument["Armed"];
-    Serial.print(Armed);
+    SoundEnabled = jsonDocument["SoundEnabled"];
+    //Serial.println("Armeret has changed");
 
     //pixels.fill(pixels.Color(red, green, blue));
     //pixels.show();
     // Respond to the client
-    create_json(Id, IpAddress, MotionDetected, Armed, Message);
+    create_json(Id, IpAddress, MotionDetected, Armed, Message, SoundEnabled);
     server.send(200, "application/json", "{}");
     runones = false;
 }
 
 // Json handlers
 
-void create_json(int id, IPAddress Ip, bool md, bool am, String ms)
+void create_json(int id, IPAddress Ip, bool md, bool am, String ms, bool se)
 {
     jsonDocument.clear();
     jsonDocument["Id"] = id;
@@ -411,6 +441,7 @@ void create_json(int id, IPAddress Ip, bool md, bool am, String ms)
     jsonDocument["MotionDetected"] = md;
     jsonDocument["Armed"] = am;
     jsonDocument["Message"] = ms;
+    jsonDocument["SoundEnabled"] = se;
     serializeJson(jsonDocument, buffer);
 }
 
@@ -419,4 +450,68 @@ void add_json_object(char* tag, float value, char* unit) {
     obj["type"] = tag;
     obj["value"] = value;
     obj["unit"] = unit;
+}
+
+void displayInfo()
+{
+    if (gps.location.isValid())
+    {
+
+        Latitude = gps.location.lat();
+        Longitude = gps.location.lng();
+        Altitude = gps.altitude.meters();
+        Satellites = gps.satellites.value();
+       /* Serial.print("Latitude: ");
+        Serial.println(gps.location.lat(), 6);
+        Serial.print("Longitude:gps ");
+        Serial.println(gps.location.lng(), 6);
+        Serial.print("Altitude: ");
+        Serial.println(gps.altitude.meters());*/
+    }
+    else
+    {
+        Longitude = 0;
+        Latitude = 0;
+        Altitude = 0;
+
+       // Serial.println("Location: Not Available");
+    }
+
+   /* Serial.print("Date: ");
+    if (gps.date.isValid())
+    {
+        Serial.print(gps.date.month());
+        Serial.print("/");
+        Serial.print(gps.date.day());
+        Serial.print("/");
+        Serial.println(gps.date.year());
+    }
+    else
+    {
+        Serial.println("Not Available");
+    }
+
+    Serial.print("Time: ");
+    if (gps.time.isValid())
+    {
+        if (gps.time.hour() < 10) Serial.print(F("0"));
+        Serial.print(gps.time.hour());
+        Serial.print(":");
+        if (gps.time.minute() < 10) Serial.print(F("0"));
+        Serial.print(gps.time.minute());
+        Serial.print(":");
+        if (gps.time.second() < 10) Serial.print(F("0"));
+        Serial.print(gps.time.second());
+        Serial.print(".");
+        if (gps.time.centisecond() < 10) Serial.print(F("0"));
+        Serial.println(gps.time.centisecond());
+    }
+    else
+    {
+        Serial.println("Not Available");
+    }
+*/
+   /* Serial.println();
+    Serial.println();
+    delay(1000);*/
 }
