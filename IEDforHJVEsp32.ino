@@ -53,7 +53,7 @@ double Latitude = 0;
 double Altitude = 0;
 int Satellites = 0;
 bool SoundEnabled = false;
-
+String Name;
 
 //bool soundenabled = true;
 bool runones = false;
@@ -269,6 +269,7 @@ void PostToDataToServer()
         doc["longitude"] = Longitude;
         doc["altitude"] = Altitude;
         doc["satellites"] = Satellites;
+        doc["name"] = Name;
 
 
         // Add an array.
@@ -391,7 +392,7 @@ void setup_api()
 void getIEDStatus()
 {
     Serial.println("Get IEDStatus");
-    create_json(Id,IpAddress,MotionDetected,Armed,Message, SoundEnabled);
+    create_json(Id,IpAddress,MotionDetected,Armed,Message, SoundEnabled, Name );
     server.send(200, "application/json", buffer);
     /*server.send(200, "application/json", "OK");*/
 }
@@ -421,19 +422,21 @@ void handlePost()
     //// Get RGB components
     Armed = jsonDocument["Armed"];
     SoundEnabled = jsonDocument["SoundEnabled"];
+    const char* test = jsonDocument["Name"];
+    Name = test;
     //Serial.println("Armeret has changed");
 
     //pixels.fill(pixels.Color(red, green, blue));
     //pixels.show();
     // Respond to the client
-    create_json(Id, IpAddress, MotionDetected, Armed, Message, SoundEnabled);
+    create_json(Id, IpAddress, MotionDetected, Armed, Message, SoundEnabled, Name);
     server.send(200, "application/json", "{}");
     runones = false;
 }
 
 // Json handlers
 
-void create_json(int id, IPAddress Ip, bool md, bool am, String ms, bool se)
+void create_json(int id, IPAddress Ip, bool md, bool am, String ms, bool se, String n)
 {
     jsonDocument.clear();
     jsonDocument["Id"] = id;
@@ -442,6 +445,7 @@ void create_json(int id, IPAddress Ip, bool md, bool am, String ms, bool se)
     jsonDocument["Armed"] = am;
     jsonDocument["Message"] = ms;
     jsonDocument["SoundEnabled"] = se;
+    jsonDocument["Name"] = n;
     serializeJson(jsonDocument, buffer);
 }
 
