@@ -490,7 +490,7 @@ void handlePost()
     }
     String body = server.arg("plain");
     deserializeJson(jsonDocument, body);
-    Serial.println(body);
+   // Serial.println(body);
     //// Get RGB components
     Armed = jsonDocument["Armed"];
     SoundEnabled = jsonDocument["SoundEnabled"];
@@ -504,7 +504,7 @@ void handlePost()
     create_json(Id, IpAddress, MotionDetected, Armed, Message, SoundEnabled, Name);
     
     server.send(200, "application/json", buffer);
-    Serial.println(buffer);
+    //Serial.println(buffer);
     runones = false;
 }
 
@@ -549,7 +549,7 @@ void displayInfo()
     }
     else
     {
-        Serial.println("No readable data");
+      //  Serial.println("No readable data");
         Longitude = 0;
         Latitude = 0;
         Altitude = 0;
